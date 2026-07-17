@@ -1,69 +1,89 @@
-import streamlit as st  # استيراد مكتبة ستريم ليت للواجهة
-import operator  # استيراد مكتبة العمليات المنطقية
-from typing import List, Annotated, Dict  # استيراد أنواع البيانات
-from typing_extensions import TypedDict  # استيراد الأنواع الهيكلية
-from langchain_groq import ChatGroq  # استيراد مكتبة جروك
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage  # استيراد أنواع الرسائل
+import streamlit as st  # استيراد مكتبة ستريم ليت لبناء الواجهة
+import operator  # استيراد مكتبة العمليات الحسابية
+import time  # استيراد مكتبة الوقت للتحكم في سرعة الاستجابة
+from typing import List, Annotated, Dict  # استيراد أدوات تحديد الأنواع
+from typing_extensions import TypedDict  # استيراد أنواع البيانات الهيكلية
+from langchain_groq import ChatGroq  # استيراد مكتبة الربط مع موديلات Groq
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage  # استيراد رسائل LangChain
 from langgraph.graph.message import add_messages  # استيراد مُقلل الرسائل
-from langgraph.graph import StateGraph, END  # استيراد هيكل الجراف
+from langgraph.graph import StateGraph, END  # استيراد أدوات بناء الجراف
 
-# إعداد الصفحة وتحديد التخطيط لتكون واجهة احترافية
+# --- 1. إعدادات الصفحة والتصميم ---
 st.set_page_config(page_title="AI Startup Engine", layout="wide", page_icon="⚡")
 
-# تصميم CSS لـ Dark Mode احترافي
+# تصميم احترافي (Dark UI) مع خطوط واضحة
 st.markdown("""
     <style>
     .stApp {background-color: #0a0a0a !important;}
     h1 {color: #00ffcc !important; font-family: 'Arial Black', sans-serif; text-transform: uppercase;}
-    [data-testid="stChatMessage"] {background-color: #151515 !important; border: 1px solid #333 !important; border-radius: 10px;}
-    .stInfo {background-color: #1a1a1a !important; color: #ffffff !important; border: 1px solid #00ffcc !important;}
+    .tagline {color: #cccccc !important; font-size: 1.1rem; margin-bottom: 2rem;}
+    [data-testid="stChatMessage"] {background-color: #151515 !important; border: 1px solid #333 !important;}
     </style>
 """, unsafe_allow_html=True)
 
 st.title("⚡ AI STARTUP ENGINE") # عنوان الأداة
-st.markdown("Developed by Eng. Montaser", unsafe_allow_html=True) # التوقيع
+st.markdown("<p class='tagline'>Advanced Multi-Agent System for Professional Business Idea Validation & Strategic Analysis.</p>", unsafe_allow_html=True) # وصف وظيفة الأداة
 
-# التحقق من وجود مفتاح الـ API
 if "GROQ_API_KEY" not in st.secrets:
-    st.error("مفتاح GROQ_API_KEY مفقود!")
+    st.error("مفتاح GROQ_API_KEY مفقود في إعدادات الـ Secrets.")
     st.stop()
 
-# تعريف هيكل الحالة (State)
+# --- 2. تعريف الحالة (State) ---
 class State(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
     advisor_reports: Annotated[Dict[str, str], operator.or_]
     final_report: str
 
-# بناء المحرك (Graph) بدون checkpointer لتجنب الأخطاء
+# --- 3. بناء المحرك (Graph) ---
 @st.cache_resource
 def get_graph():
+    # استخدام الموديل القوي للتحليل
     llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.3, api_key=st.secrets["GROQ_API_KEY"])
     
-    # عقدة التحليل
+    # دالة التحليل مع محاكاة سرعة تعتمد على طول المدخل (تعقيد السؤال)
     def advisor_node(state: State, role: str):
-        prompt = f"Act as {role}. Deeply analyze: {state['messages'][-1].content}"
+        input_text = state['messages'][-1].content
+        # محاكاة ذكية: كلما كان السؤال طويلاً، زاد وقت "التفكير" لإعطاء طابع الاحترافية
+        delay = min(len(input_text) / 500, 3) 
+        time.sleep(delay) 
+        
+        prompt = f"Act as a senior {role} expert. Provide deep strategic insights for: {input_text}"
         res = llm.invoke([SystemMessage(content=prompt)])
         return {"advisor_reports": {role: res.content}}
 
-    builder = StateGraph(State)
-    builder.add_node("fanout", lambda s: {})
+    builder = StateGraph(State) # بناء الجراف
+    builder.add_node("fanout", lambda s: {}) # عقدة توزيع المهام
     for role in ["Market", "Legal", "Tech", "Strategy"]:
         builder.add_node(role, lambda s, r=role: advisor_node(s, r))
         builder.add_edge("fanout", role)
         builder.add_edge(role, "report")
+        
     builder.add_node("report", lambda s: {"final_report": llm.invoke([HumanMessage(content=str(s['advisor_reports']))]).content})
     
     builder.set_entry_point("fanout")
     builder.add_edge("report", END)
-    return builder.compile() # تم إزالة الـ checkpointer نهائياً
+    
+    return builder.compile() # تجميع الجراف بدون Checkpointer (حل مشكلة القيمة الفارغة)
 
 graph = get_graph()
 
-# التفاعل مع المستخدم
-if prompt := st.chat_input("أدخل فكرتك التجارية - المحرك جاهز..."):
+# --- 4. التفاعل مع المستخدم ---
+if prompt := st.chat_input("أدخل فكرتك التجارية (سأحللها بعمق)..."):
     st.chat_message("user").write(prompt) # عرض رسالة المستخدم
-    with st.status("🚀 جاري معالجة الفكرة بعمق...", expanded=True) as status:
-        # تنفيذ الجراف بدون الاعتماد على ذاكرة الحالة
+    
+    # عرض خطوات التفكير للمستخدم (Thinking Steps)
+    with st.status("🚀 جاري تهيئة العقول الاصطناعية...", expanded=True) as status:
+        st.write("📊 وكيل السوق: دراسة الجدوى والمنافسين...")
+        st.write("⚖️ وكيل القانون: مراجعة المخاطر والامتثال...")
+        st.write("⚙️ وكيل التقنية: فحص الفجوة التقنية...")
+        st.write("🎯 وكيل الاستراتيجية: وضع خطة الانطلاق...")
+        
+        # تنفيذ التحليل
         result = graph.invoke({"messages": [HumanMessage(content=prompt)]})
-        st.chat_message("assistant").write(result["final_report"]) # عرض التقرير النهائي
-        status.update(label="✅ تم التحليل بنجاح.", state="complete")
+        
+        status.update(label="✅ التحليل مكتمل - النظام جاهز.", state="complete")
+        
+    # عرض النتائج
+    st.markdown("---")
+    st.markdown("### 📑 التقرير النهائي (Executive Summary)")
+    st.info(result["final_report"])
