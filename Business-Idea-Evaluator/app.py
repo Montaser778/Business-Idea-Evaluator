@@ -8,34 +8,38 @@ from langgraph.graph.message import add_messages
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 
-# 1. الإعدادات والتصميم القوي
+# 1. إعدادات الصفحة
 st.set_page_config(page_title="AI Startup Engine", layout="wide", page_icon="⚡")
 
+# 2. تصميم CSS احترافي (الوضع المظلم مع وضوح النصوص)
 st.markdown("""
     <style>
-    .stApp {background-color: #0a0a0a; color: #e0e0e0;}
+    .stApp {background-color: #0a0a0a !important;}
     h1 {font-family: 'Arial Black', sans-serif; color: #00ffcc !important; text-transform: uppercase; text-shadow: 0px 0px 10px rgba(0, 255, 204, 0.5);}
-    .stChatInputContainer {background-color: #1a1a1a !important; border: 1px solid #333 !important;}
-    .stInfo {background-color: #1a1a1a !important; color: #fff !important; border: 1px solid #333 !important;}
+    [data-testid="stChatMessage"] {background-color: #1a1a1a !important; border: 1px solid #333 !important;}
+    [data-testid="stChatMessageContent"] {color: #ffffff !important; font-size: 1.1rem !important;}
+    p, div {color: #ffffff !important;}
+    .stInfo {background-color: #1a1a1a !important; color: #ffffff !important; border: 1px solid #333 !important;}
     </style>
 """, unsafe_allow_html=True)
 
-st.title("⚡ AI Startup Engine")
+st.title("⚡ AI STARTUP ENGINE")
 
-# 2. التحقق من المفتاح
+# 3. التحقق من المفتاح
 if "GROQ_API_KEY" not in st.secrets:
-    st.error("مفتاح GROQ_API_KEY مفقود في الـ Secrets.")
+    st.error("مفتاح GROQ_API_KEY مفقود في إعدادات الـ Secrets.")
     st.stop()
 
-# 3. تعريف الـ State
+# 4. تعريف الحالة
 class State(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
     advisor_reports: Annotated[Dict[str, str], operator.or_]
     final_report: str
 
-# 4. بناء الـ Graph (القلب التقني للنظام)
+# 5. بناء الـ Graph
 @st.cache_resource
 def get_graph():
+    # استخدام الموديل المحدث والمستقر
     llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0, api_key=st.secrets["GROQ_API_KEY"])
     
     def decide_node(state: State):
@@ -52,7 +56,6 @@ def get_graph():
     builder.add_node("human", lambda s: {})
     builder.add_node("fanout", lambda s: {})
     
-    # إضافة الوكلاء
     for role in ["Market", "Legal", "Tech", "Strategy"]:
         builder.add_node(role, lambda s, r=role: advisor_node(s, r))
         builder.add_edge("fanout", role)
@@ -70,7 +73,7 @@ def get_graph():
 graph = get_graph()
 config = {"configurable": {"thread_id": "montaser_session"}}
 
-# 5. واجهة التفاعل
+# 6. التفاعل مع المستخدم
 if prompt := st.chat_input("أدخل فكرتك التجارية - المحرك جاهز..."):
     st.chat_message("user", avatar="👤").write(prompt)
     
@@ -87,7 +90,7 @@ if prompt := st.chat_input("أدخل فكرتك التجارية - المحرك 
         
         status.update(label="✅ تم إنجاز التحليل بنجاح.", state="complete")
 
-# 6. عرض النتائج
+# 7. عرض النتائج
 for msg in graph.get_state(config).values.get("messages", []):
     if isinstance(msg, (HumanMessage, AIMessage)) and "DONE" not in msg.content:
         st.chat_message("assistant" if isinstance(msg, AIMessage) else "user").write(msg.content)
