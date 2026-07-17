@@ -3,3 +3,4 @@ langchain-groq
 langgraph
 pydantic
 langgraph-checkpoint-sqlite
+langchain-core
