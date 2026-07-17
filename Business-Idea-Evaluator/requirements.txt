@@ -2,3 +2,4 @@ streamlit
 langchain-groq
 langgraph
 pydantic
+langgraph-checkpoint-sqlite
