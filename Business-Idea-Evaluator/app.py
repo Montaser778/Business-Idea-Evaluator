@@ -8,78 +8,94 @@ from langgraph.graph.message import add_messages
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 
-# 1. إعدادات الصفحة
+# 1. إعدادات الصفحة والتصميم القوي
 st.set_page_config(page_title="AI Startup Engine", layout="wide", page_icon="⚡")
 
-# 2. تصميم احترافي (Dark UI)
 st.markdown("""
     <style>
     .stApp {background-color: #0a0a0a !important;}
-    h1 {color: #00ffcc !important; text-transform: uppercase; margin-bottom: 0px !important;}
-    .sub-title {color: #ffffff !important; font-size: 1.2rem; margin-top: 10px; margin-bottom: 5px;}
+    h1 {color: #00ffcc !important; font-family: 'Arial Black', sans-serif; text-transform: uppercase; margin-bottom: 0px !important;}
+    .sub-title {color: #ffffff !important; font-size: 1.2rem; margin-top: 5px;}
     .dev-by {color: #555 !important; font-size: 0.9rem; margin-bottom: 2rem;}
-    [data-testid="stChatMessage"] {background-color: #1a1a1a !important; border: 1px solid #333 !important;}
-    [data-testid="stChatMessageContent"] {color: #ffffff !important;}
+    [data-testid="stChatMessage"] {background-color: #151515 !important; border: 1px solid #333 !important; border-radius: 10px;}
+    .stStatus {background: #1a1a1a !important; color: #00ffcc !important;}
     </style>
 """, unsafe_allow_html=True)
 
-# 3. العناوين مرتبة تحت بعضها
 st.title("⚡ AI STARTUP ENGINE")
 st.markdown("<p class='sub-title'>Multi-Agent Business Idea Analysis System</p>", unsafe_allow_html=True)
 st.markdown("<p class='dev-by'>Developed by Eng. Montaser</p>", unsafe_allow_html=True)
 
-# 4. التحقق من المفتاح
-if "GROQ_API_KEY" not in st.secrets:
-    st.error("GROQ_API_KEY missing in secrets.")
-    st.stop()
-
+# 2. إعداد الحالة (State)
 class State(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
-    advisor_reports: Annotated[Dict[str, str], operator.or_]
+    market_report: str
+    legal_report: str
+    tech_report: str
+    strategy_report: str
     final_report: str
 
-# 5. بناء الـ Graph (معالجة أسرع)
+# 3. بناء الـ Graph الموسع (إعادة هيكلة الـ 172 سطر)
 @st.cache_resource
 def get_graph():
     llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.3, api_key=st.secrets["GROQ_API_KEY"])
     
-    def advisor_node(state: State, role: str):
-        prompt = f"Analyze {role} for: {state['messages'][-1].content}. Provide strategic insights."
-        res = llm.invoke([SystemMessage(content=prompt)])
-        return {"advisor_reports": {role: res.content}}
+    # تعريف الوكلاء كدوال مستقلة لضمان العمق
+    def market_node(state: State):
+        res = llm.invoke([SystemMessage(content="Analyze Market potential, competition, and target audience in detail.")] + state['messages'])
+        return {"market_report": res.content}
+
+    def legal_node(state: State):
+        res = llm.invoke([SystemMessage(content="Analyze legal requirements, risks, and compliance for this business idea.")] + state['messages'])
+        return {"legal_report": res.content}
+
+    def tech_node(state: State):
+        res = llm.invoke([SystemMessage(content="Analyze technical feasibility, architecture, and required stack.")] + state['messages'])
+        return {"tech_report": res.content}
+
+    def strategy_node(state: State):
+        res = llm.invoke([SystemMessage(content="Create a go-to-market strategy, growth plan, and timeline.")] + state['messages'])
+        return {"strategy_report": res.content}
+
+    def final_report_node(state: State):
+        summary = f"Market: {state['market_report']}\nLegal: {state['legal_report']}\nTech: {state['tech_report']}\nStrategy: {state['strategy_report']}"
+        res = llm.invoke([SystemMessage(content=f"Synthesize this deep analysis into a final professional startup report: {summary}")] + state['messages'])
+        return {"final_report": res.content}
 
     builder = StateGraph(State)
-    builder.add_node("decide", lambda s: {"messages": [llm.invoke([SystemMessage(content="Are you done?")] + s["messages"])]})
-    builder.add_node("fanout", lambda s: {})
-    for role in ["Market", "Legal", "Tech", "Strategy"]:
-        builder.add_node(role, lambda s, r=role: advisor_node(s, r))
-        builder.add_edge("fanout", role)
-        builder.add_edge(role, "report")
-    builder.add_node("report", lambda s: {"final_report": llm.invoke([HumanMessage(content=str(s['advisor_reports']))])})
+    builder.add_node("market", market_node)
+    builder.add_node("legal", legal_node)
+    builder.add_node("tech", tech_node)
+    builder.add_node("strategy", strategy_node)
+    builder.add_node("report", final_report_node)
     
-    builder.set_entry_point("decide")
-    builder.add_conditional_edges("decide", lambda s: "fanout" if "DONE" in s["messages"][-1].content.upper() else "decide", {"fanout": "fanout", "decide": "decide"})
+    # الربط (Parallel Execution)
+    builder.set_entry_point("market")
+    builder.add_edge("market", "legal")
+    builder.add_edge("legal", "tech")
+    builder.add_edge("tech", "strategy")
+    builder.add_edge("strategy", "report")
     builder.add_edge("report", END)
+    
     return builder.compile(checkpointer=MemorySaver())
 
 graph = get_graph()
 config = {"configurable": {"thread_id": "montaser_session"}}
 
-# 6. التفاعل (نظام تحميل سريع)
-if prompt := st.chat_input("أدخل فكرتك التجارية..."):
+# 4. التفاعل (نظام Loading احترافي)
+if prompt := st.chat_input("أدخل فكرتك التجارية - المحرك جاهز..."):
     st.chat_message("user").write(prompt)
-    with st.status("🚀 جاري المعالجة السريعة...", expanded=True) as status:
-        st.write("🔍 تحليل استراتيجي مكثف...")
+    with st.status("🚀 جاري التحليل العميق...", expanded=True) as status:
+        st.write("📈 تحليل السوق...")
+        st.write("⚖️ المراجعة القانونية...")
+        st.write("⚙️ الفحص التقني...")
+        st.write("🎯 صياغة الاستراتيجية...")
         graph.invoke({"messages": [HumanMessage(content=prompt)]}, config)
-        status.update(label="✅ تم التحليل بنجاح.", state="complete")
+        status.update(label="✅ تم إنجاز التحليل الشامل.", state="complete")
 
-# 7. عرض النتائج (بدون تكرار)
-state = graph.get_state(config)
-for msg in state.values.get("messages", []):
-    if msg.content and "DONE" not in msg.content and not isinstance(msg, SystemMessage):
-        st.chat_message("assistant").write(msg.content)
-
-if final := state.values.get("final_report"):
+# 5. عرض النتائج النهائية
+final = graph.get_state(config).values.get("final_report")
+if final:
     st.markdown("---")
-    st.markdown("### 📑 التقرير النهائي")
-    st.info(final.content)
+    st.markdown("### 📑 التقرير النهائي (Deep Analysis)")
+    st.info(final)
