@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import operator
 from typing import List, Annotated, Dict
 from typing_extensions import TypedDict
@@ -12,55 +13,46 @@ from langgraph.checkpoint.memory import MemorySaver
 # 1. إعدادات الصفحة
 st.set_page_config(page_title="AI Startup Advisor", page_icon="🚀", layout="centered")
 
-# 2. كود الخلفية المتحركة (CSS)
-page_bg_img = """
-<style>
-[data-testid="stAppViewContainer"] {
-    background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
-    background-size: 400% 400%;
-    animation: gradient 15s ease infinite;
-}
-[data-testid="stHeader"] {background: rgba(0,0,0,0);}
-h1, h2, h3, p {color: white !important; text-shadow: 1px 1px 2px black;}
-</style>
+# 2. حقن الجافا سكريبت للتفاعل (تأثير الظهور التدريجي)
+js_interaction = """
+<script>
+    const observer = new MutationObserver(() => {
+        const elements = window.parent.document.querySelectorAll('div[data-testid="stChatMessage"]');
+        elements.forEach(el => {
+            el.style.opacity = '1';
+            el.style.transition = 'opacity 0.8s ease-in-out';
+        });
+    });
+    observer.observe(window.parent.document.body, { childList: true, subtree: true });
+</script>
 """
-st.markdown(page_bg_img, unsafe_allow_html=True)
+components.html(js_interaction, height=0)
 
-# 3. عرض العنوان الاحترافي
-st.markdown("<h1 style='text-align: center;'>🚀 AI Startup Idea Advisor</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; font-size: 1.2rem;'>نظام وكلاء ذكاء اصطناعي متطور لتحليل الأفكار التجارية</p>", unsafe_allow_html=True)
+# 3. عرض العنوان
+st.title("🚀 AI Startup Idea Advisor")
+st.markdown("نظام وكلاء ذكاء اصطناعي متطور لتحليل الأفكار التجارية.")
 
-# 4. جلب المفتاح بأمان من Streamlit Secrets
-try:
-    api_key = st.secrets["GROQ_API_KEY"]
-except:
-    st.error("⚠️ يرجى إضافة GROQ_API_KEY في إعدادات Secrets الخاصة بالتطبيق.")
+# 4. جلب المفتاح بأمان
+if "GROQ_API_KEY" not in st.secrets:
+    st.error("⚠️ يرجى إضافة GROQ_API_KEY في إعدادات Secrets.")
     st.stop()
 
 # 5. هيكلية LangGraph
 class State(TypedDict):
-    idea: str
     messages: Annotated[List[BaseMessage], add_messages]
     advisor_reports: Annotated[Dict[str, str], operator.or_]
     final_report: str
 
 @st.cache_resource
-def build_graph(api_key: str):
-    llm = ChatGroq(model="llama3-70b-8192", temperature=0, api_key=api_key)
+def build_graph():
+    # استخدام النموذج الجديد لحل إيرور Decommissioned
+    llm = ChatGroq(model="llama-3.1-70b-versatile", temperature=0, api_key=st.secrets["GROQ_API_KEY"])
     
-    base_system_msg = SystemMessage(
-        content="""You are a helpful tool. Decide whether you have enough info about the idea. 
-        If not, ask ONE precise follow-up question. If yes, say: DONE"""
-    )
-
     def decide_node(state: State):
-        ai_reply = llm.invoke([base_system_msg] + state["messages"])
+        sys_msg = SystemMessage(content="Decide if you have info. If not, ask ONE question. If yes, say: DONE")
+        ai_reply = llm.invoke([sys_msg] + state["messages"])
         return {"messages": [ai_reply]} 
 
-    def route(state: State):
-        return "fanout" if state["messages"][-1].content.strip().upper().startswith("DONE") else "human_node"
-
-    # تعريف الوكلاء (التحليل، القانوني، التقني، الاستراتيجي)
     def advisor_node(state: State, role: str, prompt: str):
         report = llm.invoke([SystemMessage(content=prompt + str(state['messages']))])
         return {"advisor_reports": {role: report.content}}
@@ -69,16 +61,16 @@ def build_graph(api_key: str):
     builder.add_node("decide_node", decide_node)
     builder.add_node("human_node", lambda s: {})
     builder.add_node("fanout", lambda s: {}) 
-    builder.add_node("market_analyst", lambda s: advisor_node(s, "Market", "Analyze market potential for:"))
-    builder.add_node("legal", lambda s: advisor_node(s, "Legal", "Analyze legal issues for:"))
-    builder.add_node("technical", lambda s: advisor_node(s, "Tech", "Analyze technical feasibility for:"))
-    builder.add_node("strategist", lambda s: advisor_node(s, "Strategy", "Define launch strategy for:"))
-    builder.add_node("report", lambda s: {"final_report": llm.invoke(f"Summarize these: {s['advisor_reports']}").content})
+    builder.add_node("market", lambda s: advisor_node(s, "Market", "Analyze market potential:"))
+    builder.add_node("legal", lambda s: advisor_node(s, "Legal", "Analyze legal issues:"))
+    builder.add_node("tech", lambda s: advisor_node(s, "Tech", "Analyze technical feasibility:"))
+    builder.add_node("strategy", lambda s: advisor_node(s, "Strategy", "Define launch strategy:"))
+    builder.add_node("report", lambda s: {"final_report": llm.invoke(f"Summarize: {s['advisor_reports']}").content})
 
     builder.set_entry_point("decide_node")
-    builder.add_conditional_edges("decide_node", route, {"human_node": "human_node", "fanout": "fanout"})
+    builder.add_conditional_edges("decide_node", lambda s: "fanout" if s["messages"][-1].content.upper().startswith("DONE") else "human_node", {"human_node": "human_node", "fanout": "fanout"})
     builder.add_edge("human_node", "decide_node")
-    for node in ["market_analyst", "legal", "technical", "strategist"]:
+    for node in ["market", "legal", "tech", "strategy"]:
         builder.add_edge("fanout", node)
         builder.add_edge(node, "report")
     builder.add_edge("report", END)
@@ -86,7 +78,7 @@ def build_graph(api_key: str):
     return builder.compile(checkpointer=MemorySaver(), interrupt_before=["human_node"])
 
 # 6. التشغيل
-graph = build_graph(api_key)
+graph = build_graph()
 config = {"configurable": {"thread_id": "startup_thread_1"}}
 user_input = st.chat_input("أدخل فكرتك التجارية هنا...")
 
@@ -98,7 +90,7 @@ if user_input:
     else:
         graph.invoke({"messages": [HumanMessage(content=user_input)]}, config)
 
-# عرض النتائج
+# عرض المحادثة
 for msg in graph.get_state(config).values.get("messages", []):
     if isinstance(msg, HumanMessage): st.chat_message("user").write(msg.content)
     elif isinstance(msg, AIMessage) and not msg.content.upper().startswith("DONE"): st.chat_message("assistant").write(msg.content)
